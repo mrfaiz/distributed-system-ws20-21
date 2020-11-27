@@ -49,13 +49,11 @@ class Server(Bottle):
         # we give access to the templates elements
         self.get("/templates/<filename:path>", callback=self.get_template)
         self.post("/board", callback=self.add_on_board)
-        # self.post("/propagated_content", callback=self.propagated_content)
         self.post("/board/<element_id>/", callback=self.modify_delete)
         # You can have variables in the URI, here's an example
         # self.post('/board/<element_id:int>/', callback=self.post_board) where post_board takes an argument (integer) called element_id
-        self.board = dict()
-        self.board_lock = Lock()
-        self.funciton_lock = Lock()
+        self.board = dict()  # global board
+        self.board_lock = Lock()  # Used for locking the board
 
     def get_board_items(self):
         with self.board_lock:
@@ -71,11 +69,6 @@ class Server(Bottle):
                 print("[ERROR] " + str(ex))
             return
 
-    # def check_key_exists(self, key):
-    #     with self.board_lock:
-    #         exist = key in self.board
-    #         return exist
-
     def get_value(self, key):
         with self.board_lock:
             value = self.board[key]
@@ -86,17 +79,12 @@ class Server(Bottle):
         with self.board_lock:
             if len(new_kew.strip()) == 0:
                 c_time = current_milli_time()
-                # new_kew = current_milli_time()
-                new_kew = str(c_time) + "_" + str(self.id)
+                new_kew = (
+                    str(c_time) + "_" + str(self.id)
+                )  # id = 23423432_1 , (there same data in same mili second in all server, that's why I used _ and server id)
             self.blackboard.set_content(new_content)
             self.board[new_kew] = self.blackboard.get_content()
         return new_kew
-
-    # def insert_or_update_in_board_with_key(self, new_content, e_id):
-    #     with self.lock:
-    #         self.blackboard.set_content(new_content)
-    #         self.board[e_id] = self.blackboard.get_content()
-    #     return
 
     def do_parallel_task(self, method, args=None):
         # create a thread running a new task
@@ -147,9 +135,6 @@ class Server(Bottle):
     def index(self):
         # we must transform the blackboard as a dict for compatiobility reasons
         # board = dict()
-        # keys = self.get_board_items().keys() #sorted(self.get_board_items().keys())
-        # for k in keys:
-        #     board[k] = self.get_value(k)
         board = self.get_board_items()
         return template(
             "server/templates/index.tpl",
@@ -162,9 +147,6 @@ class Server(Bottle):
     def get_board(self):
         # we must transform the blackboard as a dict for compatibility reasons
         # board = dict()
-        # keys = self.get_board_items().keys() #sorted(self.get_board_items().keys())
-        # for k in keys:
-        #     board[k] = self.get_value(k)
         board = self.get_board_items()
         return template(
             "server/templates/blackboard.tpl",
@@ -184,66 +166,62 @@ class Server(Bottle):
 
     # post on ('/board')
     def add_on_board(self):
-        # with self.funciton_lock:
-            try:
-                print("received at add_on_board")
-                text = request.forms.get("entry")
-                e_id = ""
-                if "id" in request.forms:
-                    e_id = request.forms.get("id")
+        try:
+            print("received at add_on_board")
+            text = request.forms.get("entry")
+            e_id = ''
+            if "id" in request.forms:
+                e_id = request.forms.get("id")
 
-                e_id = self.insert_or_update_in_board(text, e_id)
-                print("Received: {}".format(text))
+            e_id = self.insert_or_update_in_board(text, e_id)
+            print("Received: {}".format(text))
 
-                # Propagate to other servers, "propagated" flag is used to tackle retransmission again from server
-                if not "propagated" in request.forms:
-                    self.do_parallel_task_after_delay(
-                        prapagation_delay,
-                        self.propagate_to_all_servers,
-                        args=(
-                            "/board",
-                            "POST",
-                            {"entry": text, "id": e_id, "propagated": 1},
-                        ),
-                    )
-            except Exception as ex:
-                print("[ERROR] " + str(ex))
+            # Propagate to other servers, "propagated" flag is used to tackle retransmission again from server
+            if not "propagated" in request.forms:
+                self.do_parallel_task_after_delay(
+                    prapagation_delay,
+                    self.propagate_to_all_servers,
+                    args=(
+                        "/board",
+                        "POST",
+                        {"entry": text, "id": e_id, "propagated": 1},
+                    ),
+                )
+        except Exception as ex:
+            print("[ERROR] " + str(ex))
 
     def modify_delete(self, element_id):
-        # with self.funciton_lock:
-            try:
-                print("modify_delete ", element_id)
-                isDelete = request.forms.get("delete", type=int)
-                entry = request.forms.get("entry")
-                print(
-                    "e_id {} isDelete {} entry {} ".format(element_id, isDelete, entry)
-                )
-                if  element_id in self.board:
-                    if isDelete == 1:
-                        self.delete_key(element_id)
-                    else:
-                        self.insert_or_update_in_board(entry, element_id)
+        try:
+            print("modify_delete ", element_id)
+            isDelete = request.forms.get("delete", type=int)
+            entry = request.forms.get("entry")
+            print("e_id {} isDelete {} entry {} ".format(element_id, isDelete, entry))
+            if element_id in self.board:
+                if isDelete == 1:
+                    self.delete_key(element_id)
                 else:
-                    print("[ERROR] No Entry")
+                    self.insert_or_update_in_board(entry, element_id)
+            else:
+                print("[ERROR] No Entry")
 
-                # Propagate upadate to other servers, "propagated" flag is used to tackle retransmission again from server
-                if not "propagated" in request.forms:
-                    self.do_parallel_task_after_delay(
-                        prapagation_delay,
-                        self.propagate_to_all_servers,
-                        args=(
-                            "/board/" + element_id + "/",
-                            "POST",
-                            {
-                                "entry": entry,
-                                "id": element_id,
-                                "delete": isDelete,
-                                "propagated": 1,
-                            },
-                        ),
-                    )
-            except Exception as identifier:
-                print("[ERROR] " + str(identifier))
+            # Propagate upadate to other servers, "propagated" flag is used to tackle retransmission again from server
+            if not "propagated" in request.forms:
+                self.do_parallel_task_after_delay(
+                    prapagation_delay,
+                    self.propagate_to_all_servers,
+                    args=(
+                        "/board/" + element_id + "/",
+                        "POST",
+                        {
+                            "entry": entry,
+                            "id": element_id,
+                            "delete": isDelete,
+                            "propagated": 1,
+                        },
+                    ),
+                )
+        except Exception as identifier:
+            print("[ERROR] " + str(identifier))
 
     def get_template(self, filename):
         return static_file(filename, root="./server/templates/")
