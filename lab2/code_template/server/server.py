@@ -9,10 +9,16 @@ import bottle
 from bottle import Bottle, request, template, run, static_file
 import requests
 import random
+from leader_election import Election
+from data_processor import DataProcessor
 
 # ------------------------------------------------------------------------------------------------------
-current_milli_time = lambda: int(round(time.time() * 1000))
-intRandomNumber = lambda: random.randint(1, 100)
+
+
+def current_milli_time(): return int(round(time.time() * 1000))
+def intRandomNumber(): return random.randint(1, 100)
+
+
 prapagation_delay = 5  # in second
 
 
@@ -31,8 +37,9 @@ class Blackboard:
             self.content = new_content
         return
 
-
 # ------------------------------------------------------------------------------------------------------
+
+
 class Server(Bottle):
     def __init__(self, ID, IP, servers_list):
         super(Server, self).__init__()
@@ -50,10 +57,18 @@ class Server(Bottle):
         self.get("/templates/<filename:path>", callback=self.get_template)
         self.post("/board", callback=self.add_on_board)
         self.post("/board/<element_id>/", callback=self.modify_delete)
+        self.post("/election", callback=self.election)
+        self.post("/leader", callback=self.leader)
+
         # You can have variables in the URI, here's an example
         # self.post('/board/<element_id:int>/', callback=self.post_board) where post_board takes an argument (integer) called element_id
         self.board = dict()  # global board
         self.board_lock = Lock()  # Used for locking the board
+        self.leader_ip = self.servers_list[len(
+            self.servers_list)-1]  # last ip as leader
+        self.leader_id = len(self.servers_list)
+        self.electionThread = None
+        self.dataprocessThread = None
 
     def get_board_items(self):
         with self.board_lock:
@@ -74,14 +89,14 @@ class Server(Bottle):
             value = self.board[key]
             return value
 
-    def insert_or_update_in_board(self, new_content, e_id=""):
+    def insert_or_update_in_board(self, new_content, e_id):
         new_kew = e_id
         with self.board_lock:
-            if len(new_kew.strip()) == 0:
-                c_time = current_milli_time()
-                new_kew = (
-                    str(c_time) + "_" + str(self.id)
-                )  # id = 23423432_1 , (there same data in same mili second in all server, that's why I used _ and server id)
+            # if len(new_kew.strip()) == 0:
+            #     c_time = current_milli_time()
+            #     new_kew = (
+            #         str(c_time) + "_" + str(e_id)
+            #     )  # id = 23423432_1 , (there same data in same mili second in all server, that's why I used _ and server id)
             self.blackboard.set_content(new_content)
             self.board[new_kew] = self.blackboard.get_content()
         return new_kew
@@ -114,7 +129,8 @@ class Server(Bottle):
         success = False
         try:
             if "POST" in req:
-                res = requests.post("http://{}{}".format(srv_ip, URI), data=params_dict)
+                res = requests.post(
+                    "http://{}{}".format(srv_ip, URI), data=params_dict)
             elif "GET" in req:
                 res = requests.get("http://{}{}".format(srv_ip, URI))
             # result can be accessed res.json()
@@ -127,11 +143,28 @@ class Server(Bottle):
     def propagate_to_all_servers(self, URI, req="POST", params_dict=None):
         for srv_ip in self.servers_list:
             if srv_ip != self.ip:  # don't propagate to yourself
-                success = self.contact_another_server(srv_ip, URI, req, params_dict)
+                success = self.contact_another_server(
+                    srv_ip, URI, req, params_dict)
                 if not success:
                     print("[WARNING ]Could not contact server {}".format(srv_ip))
 
+    def start_leader_election_thread(self):
+        if(self.electionThread == None or not self.electionThread.is_alive()):
+            print(
+                "+==================start_leader_election_thread=========================")
+            electionThread = Election(self.ip, self.id, self.servers_list)
+            electionThread.start()
+
+    def start_data_processing_thread(self):
+        if(self.dataprocessThread == None or not self.dataprocessThread.isRunning()):
+            print(
+                "+==================start_data_processing_thread=========================")
+            self.dataprocessThread = DataProcessor(
+                self.id, self.ip, self.servers_list, self.board)
+            self.dataprocessThread.start()
+
     # route to ('/')
+
     def index(self):
         # we must transform the blackboard as a dict for compatiobility reasons
         # board = dict()
@@ -167,35 +200,48 @@ class Server(Bottle):
     # post on ('/board')
     def add_on_board(self):
         try:
-            print("received at add_on_board")
             text = request.forms.get("entry")
-            e_id = ''
-            if "id" in request.forms:
-                e_id = request.forms.get("id")
 
-            e_id = self.insert_or_update_in_board(text, e_id)
-            print("Received: {}".format(text))
+            if "id" in request.forms:  # got from Leader
+                self.insert_or_update_in_board(text, request.forms.get("id"))
+            else:
+                if self.leader_ip == self.ip:
+                    self.start_data_processing_thread()
+                    self.dataprocessThread.pushData(text)
+                else:
+                    success = self.contact_another_server(
+                        self.leader_ip, "/board", "POST", {"entry": text})
+                    if not success:
+                        self.start_leader_election_thread()
+        except Exception as ex:
+            print("[ERROR] " + str(ex))
 
-            # Propagate to other servers, "propagated" flag is used to tackle retransmission again from server
-            if not "propagated" in request.forms:
-                self.do_parallel_task_after_delay(
-                    prapagation_delay,
-                    self.propagate_to_all_servers,
-                    args=(
-                        "/board",
-                        "POST",
-                        {"entry": text, "id": e_id, "propagated": 1},
-                    ),
-                )
+    # post on ('/election')
+    def election(self):
+        try:
+            self.start_leader_election_thread()
+            print(True)
+        except Exception as ex:
+            print("[ERROR] " + str(ex))
+
+    # post on ('/leader')
+    def leader(self):
+        try:
+            self.leader_ip = request.forms.get("l_ip")
+            self.leader_id = request.forms.get("l_id")
+            print("leader_ip=> {}".format(self.leader_ip))
+            print(True)
         except Exception as ex:
             print("[ERROR] " + str(ex))
 
     def modify_delete(self, element_id):
         try:
+            self.leader_ip = self.servers_list[1]
             print("modify_delete ", element_id)
             isDelete = request.forms.get("delete", type=int)
             entry = request.forms.get("entry")
-            print("e_id {} isDelete {} entry {} ".format(element_id, isDelete, entry))
+            print("e_id {} isDelete {} entry {} ".format(
+                element_id, isDelete, entry))
             if element_id in self.board:
                 if isDelete == 1:
                     self.delete_key(element_id)
@@ -226,8 +272,9 @@ class Server(Bottle):
     def get_template(self, filename):
         return static_file(filename, root="./server/templates/")
 
-
 # ------------------------------------------------------------------------------------------------------
+
+
 def main():
     PORT = 80
     parser = argparse.ArgumentParser(
@@ -247,9 +294,14 @@ def main():
     server_id = args.id
     server_ip = "10.1.0.{}".format(server_id)
     servers_list = args.srv_list.split(",")
+    # lead?er_ip = servers_list[len(servers_list)-1]
 
     try:
         server = Server(server_id, server_ip, servers_list)
+        if(server_id == len(servers_list)):
+            time.sleep(3)  # for starting all servers
+            election = Election(server_ip, server_id, servers_list)
+            election.start()
         bottle.run(server, host=server_ip, port=PORT)
     except Exception as e:
         print("[ERROR] " + str(e))

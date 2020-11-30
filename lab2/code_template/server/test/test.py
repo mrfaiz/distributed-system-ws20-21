@@ -20,8 +20,9 @@ class AddPostThread(threading.Thread):
         print("Starting " + self.name)
         for x in range(self.counter):
             url = "http://" + self.ip + "/board"
-            key = str(self.threadID)+"-"+str(x) # 1-0
-            myobj = {"id":key,"entry": "Message : " + str(self.threadID)+"-"+str(x)}
+            # key = str(self.threadID)+"-"+str(x) # 1-0
+            # myobj = {"id":key,"entry": "Message : " + str(self.threadID)+"-"+str(x)}
+            myobj = {"entry": "Message : " + str(self.threadID)+"-"+str(x)}
             x = requests.post(url, data=myobj)
             time.sleep(.5)
         print("Exiting " + self.name)
@@ -86,14 +87,14 @@ if __name__ == "__main__":
     runThreads(8, 5, "10.1.0.8")
 
 
-    runModifingThreads(1, 5, "10.1.0.1")
-    runModifingThreads(2, 5, "10.1.0.2")
-    runModifingThreads(3, 5, "10.1.0.3")
-    runModifingThreads(4, 5, "10.1.0.4")
-    runModifingThreads(5, 5, "10.1.0.5")
-    runModifingThreads(6, 5, "10.1.0.6")
-    runModifingThreads(7, 5, "10.1.0.7")
-    runModifingThreads(8, 5, "10.1.0.8")
+    # runModifingThreads(1, 5, "10.1.0.1")
+    # runModifingThreads(2, 5, "10.1.0.2")
+    # runModifingThreads(3, 5, "10.1.0.3")
+    # runModifingThreads(4, 5, "10.1.0.4")
+    # runModifingThreads(5, 5, "10.1.0.5")
+    # runModifingThreads(6, 5, "10.1.0.6")
+    # runModifingThreads(7, 5, "10.1.0.7")
+    # runModifingThreads(8, 5, "10.1.0.8")
 
 
     # x = {1: 2, 3: 4, 4: 3, 2: 1, 10: 0}
