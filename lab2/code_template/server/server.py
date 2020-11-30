@@ -150,17 +150,15 @@ class Server(Bottle):
 
     def start_leader_election_thread(self):
         if(self.electionThread == None or not self.electionThread.is_alive()):
-            print(
-                "+==================start_leader_election_thread=========================")
+            print("+=====start_leader_electionhread==================")
             electionThread = Election(self.ip, self.id, self.servers_list)
             electionThread.start()
 
     def start_data_processing_thread(self):
         if(self.dataprocessThread == None or not self.dataprocessThread.isRunning()):
-            print(
-                "+==================start_data_processing_thread=========================")
+            print("+===============start_data_processing_thread=====================")
             self.dataprocessThread = DataProcessor(
-                self.id, self.ip, self.servers_list, self.board)
+                self.id, self.ip, self.servers_list)
             self.dataprocessThread.start()
 
     # route to ('/')
@@ -230,6 +228,13 @@ class Server(Bottle):
             self.leader_ip = request.forms.get("l_ip")
             self.leader_id = request.forms.get("l_id")
             print("leader_ip=> {}".format(self.leader_ip))
+
+            if(self.leader_ip != self.ip):
+                if self.dataprocessThread != None:
+                    print("Stopping processor thread")
+                    self.dataprocessThread.stop()
+                    self.dataprocessThread = None
+
             print(True)
         except Exception as ex:
             print("[ERROR] " + str(ex))

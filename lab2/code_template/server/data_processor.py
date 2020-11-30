@@ -3,34 +3,33 @@ import time
 import queue
 import requests
 
+def current_milli_time(): return int(round(time.time() * 1000))
 
 class DataProcessor(threading.Thread):
-    def __init__(self, server_id, server_ip, servers_list, data_dictionary):
+    def __init__(self, server_id, server_ip, servers_list):
         super().__init__()
         self.server_id = server_id
         self.server_ip = server_ip
         self.servers_list = servers_list
-        self.data_dictionary = data_dictionary
         self.queue = queue.Queue()
         self.running = True
-        self.message_id = len(self.data_dictionary)
 
     def run(self):
         while(self.running):
-            print("** Data processor Running ****")
-
-            message = self.queue.get()  # Wait if empty
-            self.message_id = len(self.data_dictionary)
-            message_with_id = {"id": self.message_id,
-                               "entry": message}
-            # self.data_dictionary[self.message_id] = message
-
-            for i in range(len(self.servers_list)):
-                ip = self.servers_list[i]
-                # if(ip != self.server_ip):
-                self.contact_another_server(
-                    ip, "/board", "POST", message_with_id)
-
+            try:
+                message = self.queue.get()  # Wait if empty
+                message_id =  current_milli_time()
+                message_with_id = {"id": message_id,
+                                "entry": message}
+                # self.data_dictionary[self.message_id] = message
+                print("Propagating id: {}".format(message_id))
+                for i in range(len(self.servers_list)):
+                    ip = self.servers_list[i]
+                    # if(ip != self.server_ip):
+                    self.contact_another_server(
+                        ip, "/board", "POST", message_with_id)
+            except Exception as identifier:
+                print("[ERROR] " + str(identifier))
         print("** Data processor Stopped ****")
 
     def contact_another_server(self, srv_ip, URI, req="POST", params_dict=None):
