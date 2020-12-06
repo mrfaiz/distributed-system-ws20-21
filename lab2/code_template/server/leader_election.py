@@ -4,6 +4,7 @@ import threading
 import time
 import random
 import requests
+from server_data import ServerData
 
 
 class Election(threading.Thread):
@@ -12,8 +13,7 @@ class Election(threading.Thread):
         self.server_id = server_id
         self.server_ip = server_ip
         self.server_list = server_list
-        # self.leader_ip = leader_ip
-
+     
     def contact_another_server(self, srv_ip, URI, req="POST", params_dict=None):
         # Try to contact another serverthrough a POST or GET
         # usage: server.contact_another_server("10.1.1.1", "/index", "POST", params_dict)
@@ -36,7 +36,7 @@ class Election(threading.Thread):
         print("============== Running Election Thread===========================")
         time.sleep(1)
         print(self.server_list)
-        # print("Leader IP : ",self.leader_ip)
+        # print("Leader IP : "+ ServerData.leader_ip)
         elected = True
         no_of_servers = len(self.server_list)
         if(no_of_servers != self.server_id):  ## started from last index
@@ -53,6 +53,7 @@ class Election(threading.Thread):
                     break
         if(elected):
             print("=================I am the Coordinator=========== \nid: {} , ip: {}".format(self.server_id,self.server_ip))
+            ServerData.leader_ip = self.server_ip
             for i in range(len(self.server_list)):
                 ip = self.server_list[i]
                 if self.server_ip != ip:

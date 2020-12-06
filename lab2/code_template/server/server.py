@@ -11,7 +11,7 @@ import requests
 import random
 from leader_election import Election
 from data_processor import DataProcessor
-
+from server_data import ServerData
 # ------------------------------------------------------------------------------------------------------
 
 
@@ -41,6 +41,7 @@ class Blackboard:
 
 
 class Server(Bottle):
+
     def __init__(self, ID, IP, servers_list):
         super(Server, self).__init__()
         self.blackboard = Blackboard()
@@ -64,7 +65,7 @@ class Server(Bottle):
         # self.post('/board/<element_id:int>/', callback=self.post_board) where post_board takes an argument (integer) called element_id
         self.board = dict()  # global board
         self.board_lock = Lock()  # Used for locking the board
-        self.leader_ip = self.servers_list[len(
+        ServerData.leader_ip = self.servers_list[len(
             self.servers_list)-1]  # last ip as leader
         self.leader_id = len(self.servers_list)
         self.electionThread = None
@@ -149,7 +150,7 @@ class Server(Bottle):
                     print("[WARNING ]Could not contact server {}".format(srv_ip))
 
     def start_leader_election_thread(self):
-        if(self.electionThread == None or not self.electionThread.is_alive()):
+        if(self.electionThread == None or (not self.electionThread.is_alive())):
             print("+=====start_leader_electionhread==================")
             electionThread = Election(self.ip, self.id, self.servers_list)
             electionThread.start()
@@ -203,13 +204,16 @@ class Server(Bottle):
             if "id" in request.forms:  # got from Leader
                 self.insert_or_update_in_board(text, request.forms.get("id"))
             else:
-                if self.leader_ip == self.ip:
+                if ServerData.leader_ip == self.ip:
                     self.start_data_processing_thread()
                     self.dataprocessThread.pushData(text)
                 else:
                     success = self.contact_another_server(
-                        self.leader_ip, "/board", "POST", {"entry": text})
+                        ServerData.leader_ip, "/board", "POST", {"entry": text})
+                    print("leader : {} , text : {} , success {}".format(
+                        ServerData.leader_ip, text, success))
                     if not success:
+                        print("Running election")
                         self.start_leader_election_thread()
         except Exception as ex:
             print("[ERROR] " + str(ex))
@@ -218,18 +222,18 @@ class Server(Bottle):
     def election(self):
         try:
             self.start_leader_election_thread()
-            print(True)
+            print("found election from : {}".format(request.forms.get("l_ip")))
         except Exception as ex:
             print("[ERROR] " + str(ex))
 
     # post on ('/leader')
     def leader(self):
         try:
-            self.leader_ip = request.forms.get("l_ip")
+            ServerData.leader_ip = request.forms.get("l_ip")
             self.leader_id = request.forms.get("l_id")
-            print("leader_ip=> {}".format(self.leader_ip))
+            print("leader_ip=> {}".format(ServerData.leader_ip))
 
-            if(self.leader_ip != self.ip):
+            if(ServerData.leader_ip != self.ip):
                 if self.dataprocessThread != None:
                     print("Stopping processor thread")
                     self.dataprocessThread.stop()
@@ -241,7 +245,6 @@ class Server(Bottle):
 
     def modify_delete(self, element_id):
         try:
-            self.leader_ip = self.servers_list[1]
             print("modify_delete ", element_id)
             isDelete = request.forms.get("delete", type=int)
             entry = request.forms.get("entry")
@@ -276,6 +279,7 @@ class Server(Bottle):
 
     def get_template(self, filename):
         return static_file(filename, root="./server/templates/")
+    
 
 # ------------------------------------------------------------------------------------------------------
 

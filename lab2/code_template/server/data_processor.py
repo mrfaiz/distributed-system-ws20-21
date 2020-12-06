@@ -2,6 +2,7 @@ import threading
 import time
 import queue
 import requests
+from server_data import ServerData
 
 def current_milli_time(): return int(round(time.time() * 1000))
 
@@ -13,6 +14,7 @@ class DataProcessor(threading.Thread):
         self.servers_list = servers_list
         self.queue = queue.Queue()
         self.running = True
+        self.push_lock = threading.Lock()
 
     def run(self):
         while(self.running):
@@ -25,7 +27,6 @@ class DataProcessor(threading.Thread):
                 print("Propagating id: {}".format(message_id))
                 for i in range(len(self.servers_list)):
                     ip = self.servers_list[i]
-                    # if(ip != self.server_ip):
                     self.contact_another_server(
                         ip, "/board", "POST", message_with_id)
             except Exception as identifier:
@@ -56,4 +57,5 @@ class DataProcessor(threading.Thread):
         return self.running
 
     def pushData(self, data):
-        self.queue.put(data)
+        with self.push_lock:
+            self.queue.put(data)
