@@ -54,6 +54,18 @@ class Election(threading.Thread):
         if(elected):
             print("=================I am the Coordinator=========== \nid: {} , ip: {}".format(self.server_id,self.server_ip))
             ServerData.leader_ip = self.server_ip
+
+            ## Fetch previous board data from server 1, for synchronization purpose##
+            try:
+                response = requests.get("http://{}{}".format(self.server_list[0], "/sync"), data={})
+                if response.status_code == 200:
+                    board = response.json()
+                    for key,value in board.items():
+                        ServerData.board[key] = value
+
+            except Exception as identifier:
+                print("[ERROR] " + str(identifier))
+            ## Notify other servers with self IP as leader
             for i in range(len(self.server_list)):
                 ip = self.server_list[i]
                 if self.server_ip != ip:

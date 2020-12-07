@@ -60,11 +60,13 @@ class Server(Bottle):
         self.post("/board/<element_id>/", callback=self.modify_delete)
         self.post("/election", callback=self.election)
         self.post("/leader", callback=self.leader)
+        self.get("/sync",callback=self.sync)
 
         # You can have variables in the URI, here's an example
         # self.post('/board/<element_id:int>/', callback=self.post_board) where post_board takes an argument (integer) called element_id
-        self.board = dict()  # global board
-        self.board_lock = Lock()  # Used for locking the board
+        # self.board = dict()  # global board
+        # self.board_lock = Lock()  # Used for locking the board
+        
         ServerData.leader_ip = self.servers_list[len(
             self.servers_list)-1]  # last ip as leader
         self.leader_id = len(self.servers_list)
@@ -72,34 +74,34 @@ class Server(Bottle):
         self.dataprocessThread = None
 
     def get_board_items(self):
-        with self.board_lock:
-            board = self.board
+        with ServerData.board_lock:
+            board = ServerData.board
             return board
 
     def delete_key(self, key):
         print("[DELETE] " + str(key))
-        with self.board_lock:
+        with ServerData.board_lock:
             try:
-                del self.board[key]
+                del ServerData.board[key]
             except KeyError as ex:
                 print("[ERROR] " + str(ex))
             return
 
     def get_value(self, key):
-        with self.board_lock:
-            value = self.board[key]
+        with ServerData.board_lock:
+            value = ServerData.board[key]
             return value
 
     def insert_or_update_in_board(self, new_content, e_id):
         new_kew = e_id
-        with self.board_lock:
+        with ServerData.board_lock:
             # if len(new_kew.strip()) == 0:
             #     c_time = current_milli_time()
             #     new_kew = (
             #         str(c_time) + "_" + str(e_id)
             #     )  # id = 23423432_1 , (there same data in same mili second in all server, that's why I used _ and server id)
             self.blackboard.set_content(new_content)
-            self.board[new_kew] = self.blackboard.get_content()
+            ServerData.board[new_kew] = self.blackboard.get_content()
         return new_kew
 
     def do_parallel_task(self, method, args=None):
@@ -276,6 +278,11 @@ class Server(Bottle):
                 )
         except Exception as identifier:
             print("[ERROR] " + str(identifier))
+    
+    # get "/sync"
+    def sync(self):
+        return self.get_board_items()
+
 
     def get_template(self, filename):
         return static_file(filename, root="./server/templates/")
