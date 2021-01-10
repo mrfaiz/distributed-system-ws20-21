@@ -69,9 +69,11 @@ class Server(Bottle):
         
         ServerData.leader_ip = self.servers_list[len(
             self.servers_list)-1]  # last ip as leader
+        
         self.leader_id = len(self.servers_list)
         self.electionThread = None
         self.dataprocessThread = None
+        
 
     def get_board_items(self):
         with ServerData.board_lock:
@@ -174,6 +176,7 @@ class Server(Bottle):
             "server/templates/index.tpl",
             board_title="Server {} ({})".format(self.id, self.ip),
             board_dict=board.items(),
+            server_title = ServerData.server_title,
             members_name_string="Faiz Ahmed & Md Abu Noman Majumdar",
         )
 
@@ -185,6 +188,7 @@ class Server(Bottle):
         return template(
             "server/templates/blackboard.tpl",
             board_title="Server {} ({})".format(self.id, self.ip),
+            server_title = ServerData.server_title,
             board_dict=board.items(),
         )
 
@@ -210,11 +214,12 @@ class Server(Bottle):
                     self.start_data_processing_thread()
                     self.dataprocessThread.pushData(text)
                 else:
+                    # If Coordinator does not response start election
                     success = self.contact_another_server(
                         ServerData.leader_ip, "/board", "POST", {"entry": text})
                     print("leader : {} , text : {} , success {}".format(
                         ServerData.leader_ip, text, success))
-                    if not success:
+                    if not success: # start election
                         print("Running election")
                         self.start_leader_election_thread()
         except Exception as ex:
@@ -234,12 +239,14 @@ class Server(Bottle):
             ServerData.leader_ip = request.forms.get("l_ip")
             self.leader_id = request.forms.get("l_id")
             print("leader_ip=> {}".format(ServerData.leader_ip))
-
             if(ServerData.leader_ip != self.ip):
+                ServerData.server_title = "Slave"
                 if self.dataprocessThread != None:
                     print("Stopping processor thread")
                     self.dataprocessThread.stop()
                     self.dataprocessThread = None
+                    
+                
 
             print(True)
         except Exception as ex:
@@ -252,7 +259,7 @@ class Server(Bottle):
             entry = request.forms.get("entry")
             print("e_id {} isDelete {} entry {} ".format(
                 element_id, isDelete, entry))
-            if element_id in self.board:
+            if element_id in self.get_board_items():
                 if isDelete == 1:
                     self.delete_key(element_id)
                 else:
@@ -316,6 +323,7 @@ def main():
         server = Server(server_id, server_ip, servers_list)
         if(server_id == len(servers_list)):
             time.sleep(3)  # for starting all servers
+            ## Starting election at starting 
             election = Election(server_ip, server_id, servers_list)
             election.start()
         bottle.run(server, host=server_ip, port=PORT)

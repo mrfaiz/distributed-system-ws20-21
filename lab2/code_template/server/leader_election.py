@@ -45,7 +45,7 @@ class Election(threading.Thread):
                 ip = self.server_list[i]
                 print("send election to :"+ip)
                 messge = {"l_id": self.server_id,
-                          "l_ip": self.server_ip, "entry": "test"}
+                          "l_ip": self.server_ip}
                 success = self.contact_another_server(
                     ip, "/election", "POST", messge)
                 if(success):
@@ -54,7 +54,7 @@ class Election(threading.Thread):
         if(elected):
             print("=================I am the Coordinator=========== \nid: {} , ip: {}".format(self.server_id,self.server_ip))
             ServerData.leader_ip = self.server_ip
-
+            ServerData.server_title = "Master"
             ## Fetch previous board data from server 1, for synchronization purpose##
             try:
                 response = requests.get("http://{}{}".format(self.server_list[0], "/sync"), data={})

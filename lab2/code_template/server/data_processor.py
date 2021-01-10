@@ -4,7 +4,9 @@ import queue
 import requests
 from server_data import ServerData
 
+
 def current_milli_time(): return int(round(time.time() * 1000))
+
 
 class DataProcessor(threading.Thread):
     def __init__(self, server_id, server_ip, servers_list):
@@ -20,15 +22,17 @@ class DataProcessor(threading.Thread):
         while(self.running):
             try:
                 message = self.queue.get()  # Wait if empty
-                message_id =  current_milli_time()
+                message_id = "{}_{}".format(current_milli_time(),self.server_id)
                 message_with_id = {"id": message_id,
-                                "entry": message}
+                                   "entry": message}
                 # self.data_dictionary[self.message_id] = message
                 print("Propagating id: {}".format(message_id))
+                ServerData.board[message_id] = message
                 for i in range(len(self.servers_list)):
                     ip = self.servers_list[i]
-                    self.contact_another_server(
-                        ip, "/board", "POST", message_with_id)
+                    if(ip != self.server_ip):
+                        self.contact_another_server(
+                            ip, "/board", "POST", message_with_id)
             except Exception as identifier:
                 print("[ERROR] " + str(identifier))
         print("** Data processor Stopped ****")

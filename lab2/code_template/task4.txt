@@ -4,22 +4,22 @@ Cost will include :​
 
 Number of election request ​
 Number of notify request ​
-
+Syncronization cost = 1 (becase we, fetch all the data in single request)
 ​
 
 Best case (all servers running): ​
 
 Number of election request = 1​
 Number of notify request ( for notifying leader IP) =  n – 1​
-So, Cost  = n​
+So, Cost  = n​ + 1 (Syncronization cost )​
 
 ​
 
-Worst Case (Just server 1 running): ​
+Worst Case (Only server 1 running): ​
 
 Number of election request = n - 1​
 Number of notify request ( for notifying leader IP) =  n – 1​
-So, Cost  = n -2
+So, Cost  = 2n – 2 + 1  (Syncronization cost )
 
 
 
@@ -47,18 +47,11 @@ So, Our LE algorithm fullfill all properties
 
 
 
-
-
-
-
-
-
-
 Cost of Adding message to the board​
 ===================================
 Cost for non-leader server to leader = 1 ​
 
-Cost to propagate = n (including leader, we propagated all servers)​
+Cost to propagate = n-1 ​
 
 Final Cost = n 
 
