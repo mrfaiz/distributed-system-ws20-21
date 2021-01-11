@@ -1,6 +1,7 @@
 from threading import Lock
 from data import Data
 
+
 class DistributedBoard:
     def __init__(self, server_details):
         self.lock = Lock()

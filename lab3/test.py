@@ -70,12 +70,12 @@ def runModifingThreads(thread_id, ip):
 
 if __name__ == "__main__":
 
-    add_post(1, 4, "10.1.0.1")
+    add_post(1, 5, "10.1.0.1")
     add_post(2, 4, "10.1.0.2")
     add_post(3, 4, "10.1.0.3")
     add_post(4, 4, "10.1.0.4")
     add_post(5, 4, "10.1.0.5")
-
+    # add_post(8, 5, "10.1.0.8")
 
 
     

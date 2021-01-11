@@ -1,10 +1,8 @@
 from threading import Lock, Thread
 from data import Data
 from distributed_board import DistributedBoard
-import time
 from historires import Histories
-import logging
-from utility import currrent_time_secs
+from utility import currrent_time_secs, sleep, print_stack_trace
 from action_type import ActionType
 
 
@@ -20,21 +18,21 @@ class HistorProcessor(Thread):
         self.total_processed_history = 0
 
     def run(self):
+        print("[HistoryProcessor]: started")
         while(True):
             try:
-
-                time.sleep(2)
+                sleep(5)
                 current_number_of_history = len(
                     self.histories.get_history_list())
                 # check last message time with current time
                 diff_in_sec = currrent_time_secs() - self.histories.get_latest_history_entry_time()
 
                 if current_number_of_history == self.total_processed_history:  # No new data
-                    print("[HistorProcessor] running : No new data since {} secs".format(
-                        diff_in_sec))
+                    # print("[HistorProcessor] running : No new data since {} secs".format(
+                    #     diff_in_sec))
                     continue
 
-                if diff_in_sec <= 5:
+                if diff_in_sec <= 15:
                     print("[HistorProcessor] new data found, waiting {} secs for more data".format(
                         diff_in_sec))
                     self.wait_counter += self.wait_counter
@@ -53,8 +51,9 @@ class HistorProcessor(Thread):
 
                 total_data_to_process = current_number_of_history - self.total_processed_history
                 if total_data_to_process > 0:
-                    print("[HistorProcessor] Processing started, #data to process: {} ".format(
+                    print("[HistorProcessor]: Processing started, #data to process: {} ".format(
                         total_data_to_process))
+
                     temp_history: [Data] = self.histories.get_history_list(
                     )[self.total_processed_history:current_number_of_history].copy()
                     # self.histories.clearHistory()
@@ -63,21 +62,42 @@ class HistorProcessor(Thread):
                         log.vector_sum, log.server_id))
 
                     for data in temp_history:
-                        print("[HistorProcessor: processing] text = {} , vc = {} , server_id = {}, action_type = {}".format(
+                        print("[HistorProcessor]: processing ,text = {} , vc = {} , server_id = {}, action_type = {}".format(
                             data.text, data.vector_clock, data.server_id, data.action_type))
                         if data.action_type == ActionType.ADD:
                             self.distributed_board.add_on_board(data)
                         elif data.action_type == ActionType.UPDATE:
-                            ret = self.distributed_board.update_text_from_borad(data)
+                            ret = self.distributed_board.update_text_from_borad(
+                                data)
                             if not ret:
-                                print("[HistorProcessor: update failed]: element_id = {}".format(data.element_id))
+                                print("[HistorProcessor]: update failed, element_id = {}".format(
+                                    data.element_id))
                         elif data.action_type == ActionType.DELETE:
                             self.distributed_board.delete_if_exist(
                                 data.element_id)
+
+                    # For Huge amount of data the following process is not Appropriate, Because I am processing all the data every time
+
+                    # self.total_processed_history = current_number_of_history
+                    # self.histories.get_history_list().sort(
+                    #     key=lambda log: (log.vector_sum, log.server_id))
+                    # temp_dictionary = dict()
+                    # for data in self.histories.get_history_list():
+                    #     print("[HistorProcessor]: processing ,text = {} , vc = {} , server_id = {}, action_type = {}".format(
+                    #         data.text, data.vector_clock, data.server_id, data.action_type))
+                    #     if data.action_type == ActionType.ADD:
+                    #         temp_dictionary[data.element_id] = data
+                    #     elif data.action_type == ActionType.UPDATE:
+                    #         if data.element_id in temp_dictionary:
+                    #             temp_dictionary[data.element_id].text = data.text
+                    #     elif data.action_type == ActionType.DELETE:
+                    #         if data.element_id in temp_dictionary:
+                    #             del temp_dictionary[data.element_id]
+
+                    # self.distributed_board.board_data = temp_dictionary
                 else:
-                    print("[HistorProcessor] : no data yet")
+                    print("[HistorProcessor]: No data yet")
             except Exception as ex:
-                logging.exception(ex)
+                print_stack_trace(ex)
             finally:
                 pass
-

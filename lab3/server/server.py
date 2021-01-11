@@ -9,27 +9,27 @@ import bottle
 from bottle import Bottle, request, template, run, static_file
 import requests
 import random
+from ast import literal_eval
+from json_keys import JsonKeys
+# sys.path.insert(1, 'plain_objects')
+
 from distributed_board import DistributedBoard
 from server_details import ServerDetails
 from vector_clock import VectorClock
-from tem_data_queue import TempDataQueue
 from data import Data
-from action_type import ActionType
-from ast import literal_eval
-from utility import get_data_from_other_server, is_left_array_equal_or_small_in_every_index, contact_another_server
-from json_keys import JsonKeys
 from historires import Histories
+
+from temp_data_queue import TempDataQueue
+from message_queue_to_propagate import MessageQueueToPropagate
+
+from action_type import ActionType
+from utility import print_stack_trace
+
 from history_processor import HistorProcessor
 from client_data_processor import ClientDataProcessor
-import logging
+from data_propagator import DataPropagator
+from data_resender import DataResender
 # ------------------------------------------------------------------------------------------------------
-
-
-def current_milli_time(): return int(round(time.time() * 1000))
-def intRandomNumber(): return random.randint(1, 100)
-
-
-prapagation_delay = 5  # in second
 
 
 class Server(Bottle):
@@ -45,6 +45,12 @@ class Server(Bottle):
         self.dataprocessThread: ClientDataProcessor = None
         self.historyprocessor: HistorProcessor = None
 
+        self.message_queue_to_propagate: MessageQueueToPropagate = MessageQueueToPropagate()
+        self.failed_message_queue_to_propagate: MessageQueueToPropagate = MessageQueueToPropagate()
+
+        self.data_propagator: DataPropagator = None
+        self.data_resender: DataResender = None
+
         # list all REST URIs
         # if you add new URIs to the server, you need to add them here
         self.route("/", callback=self.index)
@@ -57,28 +63,25 @@ class Server(Bottle):
         self.post("/propagated_data", callback=self.propagated_data)
         self.post("/board/<element_id>/",
                   callback=self.modify_delete_by_client)
-        self.get("/sync", callback=self.sync)
-        self.get("/get_vector_clock", callback=self.get_vector_clock)
         self.init()
-
-    def propagate_to_all_servers(self, URI, req="POST", params_dict=None):
-        for srv_ip in self.serverDetails.getServerList():
-            if srv_ip != self.serverDetails.getserverIp():  # don't propagate to yourself
-                success = contact_another_server(
-                    srv_ip, URI, req, params_dict)
-                if not success:
-                    print("[WARNING ]Could not contact server {}".format(srv_ip))
 
     def init(self):
         if(self.dataprocessThread == None or not self.dataprocessThread.isRunning()):
-            print("+===============start_data_processing_thread=====================")
             self.dataprocessThread = ClientDataProcessor(
-                self.serverDetails, self.histories, self.vector_clock, self.temp_data_queue)
+                self.serverDetails, self.histories, self.vector_clock, self.temp_data_queue, self.message_queue_to_propagate)
             self.dataprocessThread.start()
 
         self.historyprocessor = HistorProcessor(
             self.histories, self.distributedBoard)
         self.historyprocessor.start()
+
+        self.data_propagator = DataPropagator(
+            self.message_queue_to_propagate, self.failed_message_queue_to_propagate)
+        self.data_propagator.start()
+
+        self.data_resender = DataResender(
+            self.failed_message_queue_to_propagate)
+        self.data_resender.start()
 
     # route to ('/')
     def index(self):
@@ -115,7 +118,7 @@ class Server(Bottle):
 
             print("Received: {}".format(new_entry))
         except Exception as ex:
-            logging.exception(ex)
+            print_stack_trace(ex)
 
     # post on ('/board')
     def add_on_board_by_client(self):
@@ -123,37 +126,35 @@ class Server(Bottle):
             text = request.forms.get("entry")
             print("Received ==> {} ".format(text))
             self.vector_clock.increaseSelfClock()
-            temp_vc = self.vector_clock.getAllClocks().copy()
-            data = Data(text, element_id = "", action_type = ActionType.ADD,
-                        server_id = self.serverDetails.server_id, need_to_propagate=True)
-            data.set_vector_clock(temp_vc)  
+            data = Data(text, "", ActionType.ADD, self.serverDetails.server_id)
+            data.set_vector_clock(self.vector_clock.getAllClocks().copy())
 
             # Put data in queue to maintain insertion order (FIFO)
             self.temp_data_queue.putData(data)
         except Exception as ex:
-            logging.exception(ex)
+            print_stack_trace(ex)
 
     # post (/propagated_data)
     def propagated_data(self):
         try:
-            element_id: str = request.forms.get(JsonKeys.ELEMENT_ID, type = str)
+            element_id: str = request.forms.get(JsonKeys.ELEMENT_ID, type=str)
             vc = [int(clock)
                   for clock in request.forms.getlist(JsonKeys.VECTOR_CLOCK)]
-            text = request.forms.get(JsonKeys.ENTRY, type = str)
+            text = request.forms.get(JsonKeys.ENTRY, type=str)
             action_type: int = request.forms.get(
                 JsonKeys.ACTION_TYPE, type=int)
             server_id = request.forms.get(JsonKeys.SERVER_ID, type=int)
 
-            ## VC from another process, so need to update with max and increase the self
+            # VC from another process, so need to update with max and increase the self
             self.vector_clock.update_with_max_and_increase_self(vc)
 
-            print("[proppagated_data]: element_id = {} vc = {}, text = {}, server_id = {}, action_type = {}".format(element_id, vc, text, server_id, action_type))
-            data = Data(text, element_id, action_type,
-                        server_id=server_id, need_to_propagate=False)
+            print("[proppagated_data]: element_id = {} vc = {}, text = {}, server_id = {}, action_type = {}".format(
+                element_id, vc, text, server_id, action_type))
+            data = Data(text, element_id, action_type, server_id)
             data.set_vector_clock(vc)
             self.histories.appendHistory(data)
         except Exception as ex:
-            logging.exception(ex)
+            print_stack_trace(ex)
 
     def modify_delete_by_client(self, element_id):
         try:
@@ -162,26 +163,18 @@ class Server(Bottle):
             self.vector_clock.increaseSelfClock()
             temp_vc = self.vector_clock.getAllClocks().copy()
             if isDelete == 1:
-                data = Data("", element_id, ActionType.DELETE, server_id=self.serverDetails.server_id, need_to_propagate=True)
+                data = Data("", element_id, ActionType.DELETE, self.serverDetails.server_id)
                 data.set_vector_clock(temp_vc)
                 self.temp_data_queue.putData(data)
                 self.distributedBoard.delete_if_exist(data.element_id)
             else:
                 text = request.forms.get(JsonKeys.ENTRY, type=str)
-                data = Data(text, element_id, ActionType.UPDATE, server_id=self.serverDetails.server_id, need_to_propagate=True)
+                data = Data(text, element_id, ActionType.UPDATE, self.serverDetails.server_id)
                 data.set_vector_clock(temp_vc)
                 self.temp_data_queue.putData(data)
                 self.distributedBoard.update_text_from_borad(data)
         except Exception as ex:
-            logging.exception(ex)
-    # get "/sync"
-
-    def sync(self):
-        return self.distributedBoard.get_board_items()
-
-    # get "/get_vector_clock"
-    def get_vector_clock(self):
-        return {"vc": self.vector_clock.getAllClocks()}
+            print_stack_trace(ex)
 
     def get_template(self, filename):
         return static_file(filename, root="./server/templates/")
@@ -215,7 +208,7 @@ def main():
         bottle.run(server, host=server_ip, port=PORT)
         print("Started ......")
     except Exception as ex:
-        logging.exception(ex)
+        print_stack_trace(ex)
 
 
 # ------------------------------------------------------------------------------------------------------
