@@ -17,6 +17,7 @@ from server_data import ServerData
 
 def current_milli_time(): return int(round(time.time() * 1000))
 def intRandomNumber(): return random.randint(1, 100)
+def current_time_in_seconds(): return int(round(time.time()))
 
 
 prapagation_delay = 5  # in second
@@ -61,6 +62,8 @@ class Server(Bottle):
         self.post("/election", callback=self.election)
         self.post("/leader", callback=self.leader)
         self.get("/sync",callback=self.sync)
+        self.time_in_seconds_of_first_message = 0
+        self.time_in_seconds_of_last_message = 0
 
         # You can have variables in the URI, here's an example
         # self.post('/board/<element_id:int>/', callback=self.post_board) where post_board takes an argument (integer) called element_id
@@ -103,7 +106,13 @@ class Server(Bottle):
             #         str(c_time) + "_" + str(e_id)
             #     )  # id = 23423432_1 , (there same data in same mili second in all server, that's why I used _ and server id)
             self.blackboard.set_content(new_content)
+            
             ServerData.board[new_kew] = self.blackboard.get_content()
+            if(len(ServerData.board)) == 1 :
+                self.time_in_seconds_of_first_message = current_time_in_seconds()
+            elif(len(ServerData.board) == 40):
+                print("Total time = {}".format((current_time_in_seconds() - self.time_in_seconds_of_first_message)))
+
         return new_kew
 
     def do_parallel_task(self, method, args=None):

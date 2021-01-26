@@ -11,7 +11,6 @@ import requests
 import random
 from ast import literal_eval
 from json_keys import JsonKeys
-# sys.path.insert(1, 'plain_objects')
 
 from distributed_board import DistributedBoard
 from server_details import ServerDetails
@@ -25,7 +24,7 @@ from message_queue_to_propagate import MessageQueueToPropagate
 from action_type import ActionType
 from utility import print_stack_trace
 
-from history_processor import HistorProcessor
+from events_processor import EventsProcessor
 from client_data_processor import ClientDataProcessor
 from data_propagator import DataPropagator
 from data_resender import DataResender
@@ -43,7 +42,7 @@ class Server(Bottle):
         self.serverDetails.changeServerTitle(self.vector_clock.getAllClocks())
         self.temp_data_queue: TempDataQueue = TempDataQueue()
         self.dataprocessThread: ClientDataProcessor = None
-        self.historyprocessor: HistorProcessor = None
+        self.events_processor: EventsProcessor = None
 
         self.message_queue_to_propagate: MessageQueueToPropagate = MessageQueueToPropagate()
         self.failed_message_queue_to_propagate: MessageQueueToPropagate = MessageQueueToPropagate()
@@ -71,9 +70,9 @@ class Server(Bottle):
                 self.serverDetails, self.histories, self.vector_clock, self.temp_data_queue, self.message_queue_to_propagate)
             self.dataprocessThread.start()
 
-        self.historyprocessor = HistorProcessor(
+        self.events_processor = EventsProcessor(
             self.histories, self.distributedBoard)
-        self.historyprocessor.start()
+        self.events_processor.start()
 
         self.data_propagator = DataPropagator(
             self.message_queue_to_propagate, self.failed_message_queue_to_propagate)
